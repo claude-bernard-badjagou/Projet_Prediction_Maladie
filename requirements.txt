@@ -1,7 +1,4 @@
-# Version de Python utilisée
-python==3.11.9
-
-# Librairies principales
+# Core
 streamlit==1.35.0
 pandas==2.2.2
 numpy==1.26.4
@@ -14,7 +11,7 @@ seaborn==0.13.2
 plotly==5.22.0
 pygwalker==0.4.8.9
 
-# Deep learning
+# Deep learning (compatible Python 3.11)
 tensorflow==2.16.1
 keras-tuner==1.4.7
 
