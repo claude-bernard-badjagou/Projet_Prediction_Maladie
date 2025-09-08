@@ -317,21 +317,47 @@ with onglets[5]:
     st.header("Explorateur visuel libre (Pygwalker)")
     st.info("Astuce : glissez-déposez les champs à gauche pour créer vos vues interactives.")
 
+    # 0) Sanity check: est-ce que des données existent ?
+    if donnees_nettoyees is None or len(donnees_nettoyees) == 0:
+        st.warning("Aucune donnée disponible à explorer.")
+        st.stop()
+
+    # 1) Test rapide que les composants HTML fonctionnent bien
+    import streamlit.components.v1 as components
+    components.html("<div style='padding:8px;border:1px solid #eee;border-radius:8px'>✅ Test composant HTML OK</div>", height=60)
+
     try:
-        # Chargeons Pygwalker pour générer un studio d’exploration visuelle embarqué
-        import pygwalker as pyg
-
-        # Convertissons le DataFrame en interface HTML interactive de Pygwalker
-        html = pyg.to_html(donnees_nettoyees)
-
-        # ✅ Appel correct de l’API Streamlit Components
-        components.html(html, height=900, scrolling=True)
+        # 2) Méthode recommandée pour Streamlit : initialiser la communication Streamlit ↔︎ Pygwalker
+        try:
+            from pygwalker.api.streamlit import init_streamlit_comm, get_streamlit_html
+            init_streamlit_comm()  # IMPORTANT : initialise le canal de communication pour le rendu
+            pyg_html = get_streamlit_html(donnees_nettoyees, use_kernel_calc=True, spec=None)
+            components.html(pyg_html, height=950, scrolling=True)
+            st.success("Pygwalker (API Streamlit) chargé.")
+        except Exception as e_api:
+            # 3) Fallback : méthode générique HTML (utile selon versions)
+            import pygwalker as pyg
+            st.info("Chargement fallback Pygwalker (méthode générique).")
+            # Certains environnements nécessitent env='streamlit' ou 'Jupyter' ; on teste plusieurs options.
+            pyg_html = None
+            for env in ("streamlit", "Jupyter", None):
+                try:
+                    pyg_html = pyg.to_html(donnees_nettoyees, env=env) if env else pyg.to_html(donnees_nettoyees)
+                    if pyg_html and "<iframe" in pyg_html or "<div" in pyg_html:
+                        break
+                except Exception:
+                    pass
+            if not pyg_html:
+                raise RuntimeError("Impossible de générer le HTML Pygwalker via la méthode générique.")
+            components.html(pyg_html, height=950, scrolling=True)
+            st.success("Pygwalker (fallback) chargé.")
 
     except ModuleNotFoundError:
-        st.error("Pygwalker n’est pas installé. Vérifiez qu’il est bien dans requirements.txt (pygwalker==0.4.8.9).")
+        st.error("Pygwalker n’est pas installé. Ajoute `pygwalker==0.4.8.9` (ou plus récent) dans requirements.txt puis redeploie.")
     except Exception as e:
-        st.error("Pygwalker n’a pas pu être chargé. Vérifiez l’environnement de déploiement.")
+        st.error("Pygwalker n’a pas pu être rendu. Détails ci-dessous :")
         st.exception(e)
+        st.caption("Si l’erreur persiste, essaie de mettre à jour Pygwalker et Streamlit (voir ci-dessous).")
 
 # =========================
 # 〽️ MODÉLISATION
