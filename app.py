@@ -227,7 +227,7 @@ with onglets[0]:
 with onglets[1]:
     st.header("Informations sur les données")                      # Plaçons un en-tête clair
     st.write("**Aperçu des premières lignes (jeu de données d’origine)**")  # Introduisons l’aperçu
-    st.dataframe(donnees_brutes.head(), use_container_width=True)  # Affichons les 5 premières lignes d'origine
+    st.dataframe(rendre_arrow_compatible(donnees_brutes.head()), use_container_width=True)  # Affichons les 5 premières lignes d'origine
 
     st.write("**Libellés de colonnes normalisés (utilisés en interne)**")   # Expliquons les noms normalisés
     st.json({
@@ -250,21 +250,21 @@ with onglets[2]:
         st.write(f"**Nombre de lignes** : {donnees_nettoyees.shape[0]}")# Affichons nb lignes
         st.write(f"**Nombre de colonnes** : {donnees_nettoyees.shape[1]}") # Affichons nb colonnes
         st.write("**Types de données**")                                # Présentons les types
-        st.dataframe(donnees_nettoyees.dtypes.to_frame("dtype"), use_container_width=True)  # Montrons les dtypes
+        st.dataframe(rendre_arrow_compatible(donnees_nettoyees.dtypes.to_frame("dtype")), use_container_width=True)  # Montrons les dtypes
 
     with colB:
         st.subheader("Valeurs manquantes")                              # Sous-titre
-        st.dataframe(valeurs_manquantes(donnees_nettoyees), use_container_width=True)  # Affichons NA par colonne
+        st.dataframe(rendre_arrow_compatible(valeurs_manquantes(donnees_nettoyees)), use_container_width=True)  # Affichons NA par colonne
 
     st.subheader("Statistiques descriptives (variables numériques)")     # Sous-titre pour stats
-    st.dataframe(statistiques_rapides(donnees_nettoyees), use_container_width=True)     # Affichons describe()
+    st.dataframe(rendre_arrow_compatible(statistiques_rapides(donnees_nettoyees)), use_container_width=True)     # Affichons describe()
 
     st.subheader("Valeurs aberrantes potentielles (z-score > 3)")       # Sous-titre pour outliers
     outliers = detecter_valeurs_aberrantes(donnees_nettoyees)           # Détectons les valeurs anormales
     if outliers.empty:
         st.info("Aucune ligne ne dépasse le seuil de z-score sélectionné (3.0).")       # Message si rien
     else:
-        st.dataframe(outliers, use_container_width=True)                # Affichons les lignes suspectes
+        st.dataframe(rendre_arrow_compatible(outliers), use_container_width=True)       # Affichons les lignes suspectes
 
 # =========================
 # 🧹 PRÉPARATION (manipulation)
@@ -273,7 +273,7 @@ with onglets[3]:
     st.header("Préparation et export des données")                      # Titre de section
 
     st.write("**Aperçu après nettoyage (doublons supprimés, NA imputés)**")  # Introduisons l’aperçu post-nettoyage
-    st.dataframe(donnees_nettoyees.head(20), use_container_width=True)       # Affichons 20 lignes pour contrôle
+    st.dataframe(rendre_arrow_compatible(donnees_nettoyees.head(20)), use_container_width=True)       # Affichons 20 lignes pour contrôle
 
     # Bouton de téléchargement du CSV nettoyé
     st.download_button(                                                  # Créons un bouton pour récupérer le CSV propre
