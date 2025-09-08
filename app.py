@@ -17,7 +17,7 @@ from sklearn.preprocessing import PolynomialFeatures         # Importons génér
 from sklearn.ensemble import RandomForestRegressor           # Importons Forêt aléatoire pour la régression
 from sklearn.neighbors import KNeighborsRegressor            # Importons KNN régression
 from sklearn.neural_network import MLPRegressor             # Importons Perceptron multi-couches (ANN léger, sans TF)
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error  # Importons les métriques de régression
+from sklearn.metrics import r2_score, mean_absolute_error, root_mean_squared_error  # Importons les métriques de régression
 import streamlit.components.v1 as components
 
 # -------- Configuration globale de la page --------
@@ -149,11 +149,43 @@ donnees_nettoyees = nettoyer_donnees(donnees)                  # Appliquons un n
 if "donnees_nettoyees" not in st.session_state:                # Vérifions si la session contient déjà les données
     st.session_state["donnees_nettoyees"] = donnees_nettoyees  # Déposons les données nettoyées dans la session
 
+import pandas as pd
+import numpy as np
+
+def rendre_arrow_compatible(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convertit les types pandas 'Int64' (nullable) et autres objets exotiques
+    en types compatibles Arrow (int64/float/object clean).
+    """
+    dfa = df.copy()
+
+    # 1) Remplacer pd.NA par np.nan pour éviter les NA "nullable"
+    dfa = dfa.replace({pd.NA: np.nan})
+
+    # 2) Colonnes Int64(nullable) -> si NA présent, on passe en float64; sinon en int64
+    for col in dfa.columns:
+        if pd.api.types.is_integer_dtype(dfa[col]) and str(dfa[col].dtype) == "Int64":
+            if dfa[col].isna().any():
+                dfa[col] = dfa[col].astype("float64")  # on garde les NA en float
+            else:
+                dfa[col] = dfa[col].astype("int64")    # pas de NA -> int64 natif
+
+    # 3) Optionnel : objets mixtes -> en string pour éviter inférences ambiguës
+    for col in dfa.columns:
+        if dfa[col].dtype == "object":
+            # si mélange types -> cast en string
+            types_uniques = set(type(x) for x in dfa[col].dropna().head(1000))
+            if len(types_uniques) > 1:
+                dfa[col] = dfa[col].astype("string")
+
+    return dfa
+
 # --------- Barre de navigation horizontale (onglets) ---------
 onglets = st.tabs([                                           # Créons des onglets pour une navigation horizontale claire
     "🏠 Accueil", "📒 Informations", "🛠 Exploration", "🧹 Préparation",
     "🔍 Visualisations", "👀 Explorateur", "〽️ Modélisation", "◻ Prédiction", "🛖 Source"
 ])
+
 
 # =========================
 # 🏠 ACCUEIL
@@ -436,7 +468,7 @@ with onglets[6]:
     # Calculons les métriques
     r2 = r2_score(y_test, y_pred)                                                         # Calculons le R²
     mae = mean_absolute_error(y_test, y_pred)                                             # Erreur absolue moyenne
-    rmse = mean_squared_error(y_test, y_pred, squared=False)                              # Racine de l’erreur quadratique
+    rmse = root_mean_squared_error(y_test, y_pred)                             # Racine de l’erreur quadratique
 
     colm1, colm2, colm3 = st.columns(3)                                                   # Trois cartes de métriques
     colm1.metric("R²", f"{r2:0.3f}")                                                      # Affichons le R²
