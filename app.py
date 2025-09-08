@@ -1,7 +1,8 @@
+# =========================
+# Application Streamlit unique : Incidence des maladies (Côte d'Ivoire, 2012-2015)
+# =========================
 
-# Application Streamlit : Incidence des maladies (Côte d'Ivoire, 2012-2015)
-
-# -------- Importations de packages--------
+# -------- Imports (tous commentés) --------
 import streamlit as st                     # Importons Streamlit pour construire l'application web interactive
 import pandas as pd                        # Importons pandas pour charger et manipuler les données tabulaires
 import numpy as np                         # Importons numpy pour quelques opérations numériques
@@ -17,8 +18,7 @@ from sklearn.preprocessing import PolynomialFeatures         # Importons génér
 from sklearn.ensemble import RandomForestRegressor           # Importons Forêt aléatoire pour la régression
 from sklearn.neighbors import KNeighborsRegressor            # Importons KNN régression
 from sklearn.neural_network import MLPRegressor             # Importons Perceptron multi-couches (ANN léger, sans TF)
-from sklearn.metrics import r2_score, mean_absolute_error, root_mean_squared_error  # Importons les métriques de régression
-import streamlit.components.v1 as components
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error  # Importons les métriques de régression
 
 # -------- Configuration globale de la page --------
 st.set_page_config(                             # Configurons la page Streamlit pour un rendu propre
@@ -149,43 +149,11 @@ donnees_nettoyees = nettoyer_donnees(donnees)                  # Appliquons un n
 if "donnees_nettoyees" not in st.session_state:                # Vérifions si la session contient déjà les données
     st.session_state["donnees_nettoyees"] = donnees_nettoyees  # Déposons les données nettoyées dans la session
 
-import pandas as pd
-import numpy as np
-
-def rendre_arrow_compatible(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Convertit les types pandas 'Int64' (nullable) et autres objets exotiques
-    en types compatibles Arrow (int64/float/object clean).
-    """
-    dfa = df.copy()
-
-    # 1) Remplacer pd.NA par np.nan pour éviter les NA "nullable"
-    dfa = dfa.replace({pd.NA: np.nan})
-
-    # 2) Colonnes Int64(nullable) -> si NA présent, on passe en float64; sinon en int64
-    for col in dfa.columns:
-        if pd.api.types.is_integer_dtype(dfa[col]) and str(dfa[col].dtype) == "Int64":
-            if dfa[col].isna().any():
-                dfa[col] = dfa[col].astype("float64")  # on garde les NA en float
-            else:
-                dfa[col] = dfa[col].astype("int64")    # pas de NA -> int64 natif
-
-    # 3) Optionnel : objets mixtes -> en string pour éviter inférences ambiguës
-    for col in dfa.columns:
-        if dfa[col].dtype == "object":
-            # si mélange types -> cast en string
-            types_uniques = set(type(x) for x in dfa[col].dropna().head(1000))
-            if len(types_uniques) > 1:
-                dfa[col] = dfa[col].astype("string")
-
-    return dfa
-
 # --------- Barre de navigation horizontale (onglets) ---------
 onglets = st.tabs([                                           # Créons des onglets pour une navigation horizontale claire
     "🏠 Accueil", "📒 Informations", "🛠 Exploration", "🧹 Préparation",
     "🔍 Visualisations", "👀 Explorateur", "〽️ Modélisation", "◻ Prédiction", "🛖 Source"
 ])
-
 
 # =========================
 # 🏠 ACCUEIL
@@ -227,7 +195,7 @@ with onglets[0]:
 with onglets[1]:
     st.header("Informations sur les données")                      # Plaçons un en-tête clair
     st.write("**Aperçu des premières lignes (jeu de données d’origine)**")  # Introduisons l’aperçu
-    st.dataframe(rendre_arrow_compatible(donnees_brutes.head()), use_container_width=True)  # Affichons les 5 premières lignes d'origine
+    st.dataframe(donnees_brutes.head(), use_container_width=True)  # Affichons les 5 premières lignes d'origine
 
     st.write("**Libellés de colonnes normalisés (utilisés en interne)**")   # Expliquons les noms normalisés
     st.json({
@@ -250,21 +218,21 @@ with onglets[2]:
         st.write(f"**Nombre de lignes** : {donnees_nettoyees.shape[0]}")# Affichons nb lignes
         st.write(f"**Nombre de colonnes** : {donnees_nettoyees.shape[1]}") # Affichons nb colonnes
         st.write("**Types de données**")                                # Présentons les types
-        st.dataframe(rendre_arrow_compatible(donnees_nettoyees.dtypes.to_frame("dtype")), use_container_width=True)  # Montrons les dtypes
+        st.dataframe(donnees_nettoyees.dtypes.to_frame("dtype"), use_container_width=True)  # Montrons les dtypes
 
     with colB:
         st.subheader("Valeurs manquantes")                              # Sous-titre
-        st.dataframe(rendre_arrow_compatible(valeurs_manquantes(donnees_nettoyees)), use_container_width=True)  # Affichons NA par colonne
+        st.dataframe(valeurs_manquantes(donnees_nettoyees), use_container_width=True)  # Affichons NA par colonne
 
     st.subheader("Statistiques descriptives (variables numériques)")     # Sous-titre pour stats
-    st.dataframe(rendre_arrow_compatible(statistiques_rapides(donnees_nettoyees)), use_container_width=True)     # Affichons describe()
+    st.dataframe(statistiques_rapides(donnees_nettoyees), use_container_width=True)     # Affichons describe()
 
     st.subheader("Valeurs aberrantes potentielles (z-score > 3)")       # Sous-titre pour outliers
     outliers = detecter_valeurs_aberrantes(donnees_nettoyees)           # Détectons les valeurs anormales
     if outliers.empty:
         st.info("Aucune ligne ne dépasse le seuil de z-score sélectionné (3.0).")       # Message si rien
     else:
-        st.dataframe(rendre_arrow_compatible(outliers), use_container_width=True)       # Affichons les lignes suspectes
+        st.dataframe(outliers, use_container_width=True)                # Affichons les lignes suspectes
 
 # =========================
 # 🧹 PRÉPARATION (manipulation)
@@ -273,7 +241,7 @@ with onglets[3]:
     st.header("Préparation et export des données")                      # Titre de section
 
     st.write("**Aperçu après nettoyage (doublons supprimés, NA imputés)**")  # Introduisons l’aperçu post-nettoyage
-    st.dataframe(rendre_arrow_compatible(donnees_nettoyees.head(20)), use_container_width=True)       # Affichons 20 lignes pour contrôle
+    st.dataframe(donnees_nettoyees.head(20), use_container_width=True)       # Affichons 20 lignes pour contrôle
 
     # Bouton de téléchargement du CSV nettoyé
     st.download_button(                                                  # Créons un bouton pour récupérer le CSV propre
@@ -346,50 +314,15 @@ with onglets[4]:
 # 👀 EXPLORATEUR (Pygwalker)
 # =========================
 with onglets[5]:
-    st.header("Explorateur visuel libre (Pygwalker)")
-    st.info("Astuce : glissez-déposez les champs à gauche pour créer vos vues interactives.")
-
-    # 0) Sanity check: est-ce que des données existent ?
-    if donnees_nettoyees is None or len(donnees_nettoyees) == 0:
-        st.warning("Aucune donnée disponible à explorer.")
-        st.stop()
-
-    # 1) Test rapide que les composants HTML fonctionnent bien
-    import streamlit.components.v1 as components
-    components.html("<div style='padding:8px;border:1px solid #eee;border-radius:8px'>✅ Test composant HTML OK</div>", height=60)
-
+    st.header("Explorateur visuel libre (Pygwalker)")                          # Titre de section
+    st.info("Astuce : glissez-déposez les champs à gauche pour créer vos vues interactives.")  # Conseils d'usage
     try:
-        # 2) Méthode recommandée pour Streamlit : initialiser la communication Streamlit ↔︎ Pygwalker
-        try:
-            from pygwalker.api.streamlit import init_streamlit_comm, get_streamlit_html
-            init_streamlit_comm()  # IMPORTANT : initialise le canal de communication pour le rendu
-            pyg_html = get_streamlit_html(donnees_nettoyees, use_kernel_calc=True, spec=None)
-            components.html(pyg_html, height=950, scrolling=True)
-            st.success("Pygwalker (API Streamlit) chargé.")
-        except Exception as e_api:
-            # 3) Fallback : méthode générique HTML (utile selon versions)
-            import pygwalker as pyg
-            st.info("Chargement fallback Pygwalker (méthode générique).")
-            # Certains environnements nécessitent env='streamlit' ou 'Jupyter' ; on teste plusieurs options.
-            pyg_html = None
-            for env in ("streamlit", "Jupyter", None):
-                try:
-                    pyg_html = pyg.to_html(donnees_nettoyees, env=env) if env else pyg.to_html(donnees_nettoyees)
-                    if pyg_html and "<iframe" in pyg_html or "<div" in pyg_html:
-                        break
-                except Exception:
-                    pass
-            if not pyg_html:
-                raise RuntimeError("Impossible de générer le HTML Pygwalker via la méthode générique.")
-            components.html(pyg_html, height=950, scrolling=True)
-            st.success("Pygwalker (fallback) chargé.")
-
-    except ModuleNotFoundError:
-        st.error("Pygwalker n’est pas installé. Ajoute `pygwalker==0.4.8.9` (ou plus récent) dans requirements.txt puis redeploie.")
+        import pygwalker as pyg                                                # Importons Pygwalker seulement ici
+        html = pyg.to_html(donnees_nettoyees)                                  # Convertissons le DataFrame en studio web
+        st.components.v1.html(html, height=900, scrolling=True)               # Intégrons le studio dans Streamlit
     except Exception as e:
-        st.error("Pygwalker n’a pas pu être rendu. Détails ci-dessous :")
+        st.error("Pygwalker n’a pas pu être chargé. Vérifiez l’environnement de déploiement.")
         st.exception(e)
-        st.caption("Si l’erreur persiste, essaie de mettre à jour Pygwalker et Streamlit (voir ci-dessous).")
 
 # =========================
 # 〽️ MODÉLISATION
@@ -468,7 +401,7 @@ with onglets[6]:
     # Calculons les métriques
     r2 = r2_score(y_test, y_pred)                                                         # Calculons le R²
     mae = mean_absolute_error(y_test, y_pred)                                             # Erreur absolue moyenne
-    rmse = root_mean_squared_error(y_test, y_pred)                             # Racine de l’erreur quadratique
+    rmse = mean_squared_error(y_test, y_pred, squared=False)                              # Racine de l’erreur quadratique
 
     colm1, colm2, colm3 = st.columns(3)                                                   # Trois cartes de métriques
     colm1.metric("R²", f"{r2:0.3f}")                                                      # Affichons le R²
@@ -531,7 +464,7 @@ with onglets[7]:
                 st.info(f"Moyenne observée (mêmes filtres, historique) : **{ref_local:.2f} %**")
 
 # =========================
-#  SOURCE
+# 🛖 SOURCE
 # =========================
 with onglets[8]:
     st.header("Origine des données")                                                      # Titre de section
