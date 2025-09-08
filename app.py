@@ -1,6 +1,6 @@
-
-# Application Streamlit : Incidence des maladies (Côte d'Ivoire, 2012-2015)
-
+# =========================
+# Application Streamlit unique : Incidence des maladies (Côte d'Ivoire, 2012-2015)
+# =========================
 
 # -------- Imports (tous commentés) --------
 import streamlit as st                                 # Application web interactive
