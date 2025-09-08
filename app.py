@@ -1,60 +1,81 @@
-# =========================
-# Application Streamlit unique : Incidence des maladies (Côte d'Ivoire, 2012-2015)
-# =========================
+
+# Application Streamlit : Incidence des maladies (Côte d'Ivoire, 2012-2015)
 
 # -------- Imports (tous commentés) --------
-import streamlit as st                                 # Application web interactive
-import streamlit.components.v1 as components           # Composants HTML (intégration Pygwalker)
-import pandas as pd                                    # Manipulation de données tabulaires
-import numpy as np                                     # Calcul numérique
-import plotly.express as px                            # Visualisations interactives
-import plotly.graph_objects as go                      # Graphiques personnalisés
-from io import StringIO                                # Tampon texte pour export CSV
+import os                                              # Importons os pour tester l'existence des fichiers locaux
+from pathlib import Path                                # Importons Path pour manipuler des chemins de façon robuste
+import streamlit as st                                  # Importons Streamlit pour construire l'application web
+import pandas as pd                                     # Importons pandas pour charger et manipuler les données tabulaires
+import numpy as np                                      # Importons numpy pour quelques opérations numériques
+import plotly.express as px                             # Importons Plotly Express pour créer des visualisations interactives
+from plotly import graph_objects as go                  # Importons Graph Objects pour des graphiques personnalisés (si besoin)
+from io import StringIO                                 # Importons StringIO pour générer un CSV téléchargeable en mémoire
+from sklearn.model_selection import train_test_split, cross_val_score  # Outils de split et validation croisée
+from sklearn.compose import ColumnTransformer           # ColumnTransformer pour traiter colonnes hétérogènes
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, PolynomialFeatures  # Encodage et features poly
+from sklearn.pipeline import Pipeline                   # Pipeline pour chaîner prétraitements + modèle
+from sklearn.linear_model import LinearRegression       # Modèle de Régression linéaire
+from sklearn.ensemble import RandomForestRegressor      # Modèle de Forêt aléatoire (régression)
+from sklearn.neighbors import KNeighborsRegressor       # Modèle KNN régression
+from sklearn.neural_network import MLPRegressor        # Réseau de neurones léger (sans TF)
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error  # Métriques régression
+from pandas.api import types as ptypes                  # Importons outils de détection de types pandas
 
-# Outils ML
-from sklearn.model_selection import train_test_split, cross_val_score  # Split + CV
-from sklearn.compose import ColumnTransformer                           # Prétraitement hétérogène
-from sklearn.preprocessing import OneHotEncoder, StandardScaler         # Encodage + standardisation
-from sklearn.pipeline import Pipeline                                   # Pipeline prétraitement+modèle
-from sklearn.linear_model import LinearRegression                       # Régression linéaire
-from sklearn.preprocessing import PolynomialFeatures                    # Caractéristiques polynomiales
-from sklearn.ensemble import RandomForestRegressor                      # Forêt aléatoire
-from sklearn.neighbors import KNeighborsRegressor                       # KNN
-from sklearn.neural_network import MLPRegressor                         # Réseau de neurones (MLP)
-from sklearn.metrics import r2_score, mean_absolute_error, root_mean_squared_error  # Métriques
+# (Optionnel) Import propre du composant HTML si jamais on en a besoin ponctuellement
+from streamlit.components.v1 import html as html_component  # Importons html(...) via components.v1 (recommandé par la doc)
 
-# -------- Options pandas (prévenir les downcasting silencieux) --------
-pd.set_option('future.no_silent_downcasting', True)  # Évite les changements silencieux de dtype futurs
+# -------- Préférences pandas (éviter avertissements futurs inutiles) --------
+pd.set_option("future.no_silent_downcasting", True)     # Fixons l’option pour éviter les downcasts silencieux dépréciés
+
+# -------- Utilitaires d’assets --------
+def chemin_asset(relatif: str) -> Path:
+    """Construisons un chemin absolu sûr vers un asset du dépôt."""
+    # Utilisons le répertoire courant de l’app (là où se trouve app.py) pour résoudre la ressource
+    racine = Path(__file__).parent
+    return (racine / relatif).resolve()
+
+def image_page_icon():
+    """Chargeons une icône de page si disponible, sinon utilisons un emoji."""
+    # Testons d’abord un chemin 'assets/moustique_tigre.jpg' (bonne pratique : ranger les images dans /assets)
+    candidats = ["assets/moustique_tigre.jpg", "moustique_tigre.jpg"]
+    for c in candidats:
+        p = chemin_asset(c)
+        if p.exists():
+            return str(p)  # Renvoyons le chemin si l’image est présente
+    return "🦟"  # Fallback emoji si l’image n’est pas dans le repo
 
 # -------- Configuration globale de la page --------
-st.set_page_config(
-    page_title="Incidence maladies CI (2012-2015)",   # Titre de l’onglet navigateur
-    page_icon="moustique_tigre.jpg",                  # Icône de page
-    layout="wide"                                     # Mise en page large
+st.set_page_config(                                     # Configurons la page Streamlit pour un rendu propre
+    page_title="Incidence maladies CI (2012-2015)",     # Définissons le titre de l’onglet navigateur
+    page_icon=image_page_icon(),                        # Définissons l’icône de page (image si dispo, sinon emoji)
+    layout="wide"                                       # Passons en mode large pour mieux exploiter l’écran
 )
 
 # -------- Styles CSS légers pour homogénéiser l'UI --------
 st.markdown("""
 <style>
-.block { background:#fff; padding:16px; border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,0.06); }
-h2, h3 { color:#0D1D2C; }
-[data-testid="stDataFrame"] { border:1px solid #eee; border-radius:8px; }
-.section { margin-top:16px; margin-bottom:24px; }
+.block { background: #ffffff; padding: 16px; border-radius: 12px;
+         box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+h2, h3 { color: #0D1D2C; }
+[data-testid="stDataFrame"] { border: 1px solid #eee; border-radius: 8px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --------- Fonctions utilitaires (toutes en français + commentaires) ---------
+# --------- Fonctions utilitaires (français + pourquoi) ---------
 
 @st.cache_data(show_spinner=True)
 def charger_donnees_csv(chemin: str) -> pd.DataFrame:
-    """Chargeons le fichier CSV pour obtenir le jeu de données source (unique point d'entrée)."""
-    df = pd.read_csv(chemin)                      # Lecture du fichier CSV "Incidence.csv"
-    return df                                     # Renvoyons les données brutes
+    """Chargeons le fichier CSV pour alimenter l’application (source unique)."""
+    # Chargeons le fichier CSV pour obtenir le jeu de données source
+    df = pd.read_csv(chemin)  # Lecture simple du fichier "Incidence.csv"
+    return df                  # Renvoyons le DataFrame chargé
 
 def normaliser_noms_colonnes(df: pd.DataFrame) -> pd.DataFrame:
-    """Harmonisons les libellés de colonnes pour un code robuste, malgré les variantes d'intitulés."""
-    donnees = df.copy()                           # Copions le DataFrame pour travailler proprement
-    mapping = {                                   # Table de correspondance des noms hétérogènes
+    """Harmonisons les libellés de colonnes pour un code robuste (variantes orthographiques incluses)."""
+    donnees = df.copy()  # Copions le DataFrame d’entrée pour travailler en sécurité
+
+    # Correspondance libellés hétérogènes -> noms normalisés
+    mapping = {
         "ANNEE": "annee",
         "REGIONS / DISTRICTS": "regions_districts",
         "REGIONS/DISTRICTS": "regions_districts",
@@ -64,25 +85,31 @@ def normaliser_noms_colonnes(df: pd.DataFrame) -> pd.DataFrame:
         "INCIDENCE SUR LA POPULATION GENERALE (%)": "incidence_population_pct",
         "INCIDENCE_SUR_LA_POPULATION_GENERALE_(%)": "incidence_population_pct",
     }
-    donnees = donnees.rename(columns={c: mapping[c] for c in donnees.columns if c in mapping})  # Renommage ciblé
-    donnees.columns = [c.strip().lower().replace(" ", "_") for c in donnees.columns]            # Normalisation globale
+    # Renommons ce qui est présent
+    colonnes_renommees = {c: mapping[c] for c in donnees.columns if c in mapping}
+    donnees = donnees.rename(columns=colonnes_renommees)
+
+    # Normalisons tout le reste (minuscules + underscore)
+    donnees.columns = [c.strip().lower().replace(" ", "_") for c in donnees.columns]
     return donnees
 
 def typer_colonnes(donnees: pd.DataFrame) -> pd.DataFrame:
-    """Typage : année en float64 (compatible Arrow), incidence en float64, autres en string."""
+    """Typage : convertissons année en entier tolérant NA, incidence en float, autres en string."""
     df = donnees.copy()
     if "annee" in df.columns:
-        df["annee"] = pd.to_numeric(df["annee"], errors="coerce")                   # Année -> float64 (gère NaN)
+        # Convertissons en entier “nullable” au départ, on adaptera ensuite pour Arrow
+        df["annee"] = pd.to_numeric(df["annee"], errors="coerce").astype("Int64")
     if "incidence_population_pct" in df.columns:
-        df["incidence_population_pct"] = pd.to_numeric(df["incidence_population_pct"], errors="coerce")  # Float64
+        df["incidence_population_pct"] = pd.to_numeric(df["incidence_population_pct"], errors="coerce")
     for col in ["regions_districts", "villes_communes", "maladie"]:
         if col in df.columns:
-            df[col] = df[col].astype("string")                                      # Catégories -> string pandas
+            df[col] = df[col].astype("string")
     return df
 
 def statistiques_rapides(df: pd.DataFrame) -> pd.DataFrame:
-    """Produisons un tableau synthétique des statistiques descriptives numériques."""
-    return df.select_dtypes(include=[np.number]).describe().T
+    """Produisons un tableau synthétique des statistiques numériques pour survol rapide."""
+    stats = df.select_dtypes(include=[np.number]).describe().T
+    return stats
 
 def valeurs_manquantes(df: pd.DataFrame) -> pd.DataFrame:
     """Comptons les valeurs manquantes par colonne pour cibler le nettoyage."""
@@ -91,100 +118,74 @@ def valeurs_manquantes(df: pd.DataFrame) -> pd.DataFrame:
 
 def nettoyer_donnees(df: pd.DataFrame) -> pd.DataFrame:
     """Nettoyons : supprimons les doublons, imputons NA (médiane sur numérique, mode sur catégoriel)."""
-    donnees = df.copy().drop_duplicates()                                             # Supprimons les doublons
-    cols_num = donnees.select_dtypes(include=[np.number]).columns.tolist()            # Numériques
-    cols_cat = [c for c in donnees.columns if c not in cols_num]                      # Catégorielles
-    for c in cols_num:                                                                
-        if donnees[c].isna().any():                                                   # Imputation numérique
+    donnees = df.copy()
+    donnees = donnees.drop_duplicates()
+
+    cols_num = donnees.select_dtypes(include=[np.number, "Int64", "Float64"]).columns.tolist()
+    cols_cat = [c for c in donnees.columns if c not in cols_num]
+
+    for c in cols_num:
+        if donnees[c].isna().any():
             donnees[c] = donnees[c].fillna(donnees[c].median())
+
     for c in cols_cat:
-        if donnees[c].isna().any():                                                   # Imputation catégorielle
+        if donnees[c].isna().any():
             mode = donnees[c].mode(dropna=True)
             if len(mode) > 0:
                 donnees[c] = donnees[c].fillna(mode.iloc[0])
+
     return donnees
 
-def detecter_valeurs_aberrantes(df: pd.DataFrame, z=3.0) -> pd.DataFrame:
+def rendre_arrow_compatible(df: pd.DataFrame) -> pd.DataFrame:
+    """Convertissons les dtypes 'difficiles' (Int64 nullable, object mixte) pour st.dataframe/Arrow."""
+    dfa = df.copy()
+
+    for col in dfa.columns:
+        dtype = dfa[col].dtype
+
+        # 1) Entiers "nullable" pandas (Int64, Int32, …) -> float64 si présence de NA (préserve NA)
+        if ptypes.is_extension_array_dtype(dtype) and str(dtype).startswith("Int"):
+            if dfa[col].isna().any():
+                dfa[col] = dfa[col].astype("float64")
+            else:
+                dfa[col] = dfa[col].astype("int64")
+
+        # 2) Objets hétérogènes : tentons numérique, sinon string
+        elif dtype == "object":
+            # Essayons une conversion numérique globale
+            conv = pd.to_numeric(dfa[col], errors="ignore")
+            if conv.dtype != "object":
+                dfa[col] = conv
+            else:
+                dfa[col] = dfa[col].astype("string")
+
+    return dfa
+
+def detecter_valeurs_aberrantes(df: pd.DataFrame, z: float = 3.0) -> pd.DataFrame:
     """Détectons les valeurs aberrantes (z-score > seuil) pour les colonnes numériques."""
     dnum = df.select_dtypes(include=[np.number])
     if dnum.empty:
-        return df.iloc[0:0]
-    zscores = (dnum - dnum.mean()) / dnum.std(ddof=0)                                 # Z-scores (écart-type population)
-    masque_out = (zscores.abs() > z).any(axis=1)                                      # Lignes avec au moins un dépassement
+        return df.head(0)
+    zscores = (dnum - dnum.mean()) / dnum.std(ddof=0)
+    masque_out = (zscores.abs() > z).any(axis=1)
     return df.loc[masque_out]
 
 def telecharger_csv(df: pd.DataFrame) -> bytes:
     """Préparons un CSV téléchargeable (en mémoire) pour récupérer les données nettoyées."""
-    buffer = StringIO()
-    df.to_csv(buffer, index=False)
-    return buffer.getvalue().encode("utf-8")
-
-def rendre_arrow_compatible(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Convertissons les types pandas potentiellement problématiques (nullable, objets mixtes)
-    vers des types Arrow-compatibles avant affichage Streamlit, sans downcasting silencieux.
-    """
-    dfa = df.copy()
-    dfa = dfa.replace({pd.NA: np.nan})                     # Remplaçons explicitement pd.NA par np.nan
-    dfa.infer_objects(copy=False)                          # Alignons les dtypes object -> types concrets (sans downcasting silencieux)
-    # Colonnes 'object' hétérogènes -> string si mélange de types
-    for col in dfa.columns:
-        if dfa[col].dtype == "object":
-            types_uniques = set(type(x) for x in dfa[col].dropna().head(1000))
-            if len(types_uniques) > 1:
-                dfa[col] = dfa[col].astype("string")
-    return dfa
+    tampon = StringIO()
+    df.to_csv(tampon, index=False)
+    return tampon.getvalue().encode("utf-8")
 
 # --------- Chargement unique & préparation initiale ---------
-# Chargeons le fichier 'Incidence.csv' pour alimenter l'app, puis normalisons/typons/nettoyons
-donnees_brutes = charger_donnees_csv("Incidence.csv")          # Chargeons le fichier source
-donnees = normaliser_noms_colonnes(donnees_brutes)             # Uniformisons les noms de colonnes
-donnees = typer_colonnes(donnees)                              # Typage Arrow-friendly
-donnees_nettoyees = nettoyer_donnees(donnees)                  # Nettoyage simple & robuste
+# Chargeons le fichier 'Incidence.csv' pour alimenter l'app, puis normalisons/typons/Nettoyons
+donnees_brutes = charger_donnees_csv("Incidence.csv")            # Chargeons le fichier CSV pour obtenir les données d'origine
+donnees = normaliser_noms_colonnes(donnees_brutes)               # Normalisons les libellés pour unifier le code
+donnees = typer_colonnes(donnees)                                # Typage cohérent (entiers, float, string)
+donnees_nettoyees = nettoyer_donnees(donnees)                    # Appliquons un nettoyage simple et robuste
 
-# Stockons dans la session pour réutiliser partout
+# Stockons dans la session pour réutiliser partout sans rechargement
 if "donnees_nettoyees" not in st.session_state:
     st.session_state["donnees_nettoyees"] = donnees_nettoyees
-
-# --------- (Option) Auto-entraînement au démarrage (robuste) ---------
-AUTO_TRAIN_ON_START = True  # Mets False si tu préfères entraîner manuellement dans l’onglet Modélisation
-
-def construire_pipeline_defaut():
-    """Pipeline par défaut (prétraitements + RandomForest)."""
-    colonnes_numeriques = ["annee"]
-    colonnes_categorielles = ["regions_districts", "villes_communes", "maladie"]
-    preprocesseur = ColumnTransformer(
-        transformers=[
-            ("num", StandardScaler(), colonnes_numeriques),
-            ("cat", OneHotEncoder(handle_unknown="ignore"), colonnes_categorielles),
-        ]
-    )
-    modele = RandomForestRegressor(n_estimators=300, random_state=42)
-    return Pipeline([("prep", preprocesseur), ("mod", modele)])
-
-def entrainer_au_demarrage_si_absent(df: pd.DataFrame):
-    """
-    Entraîne un modèle de base si absent.
-    - Supprime les lignes incomplètes (dropna) pour éviter un crash.
-    - Capture les exceptions pour ne pas bloquer le rendu des onglets.
-    """
-    try:
-        data = df[["annee", "regions_districts", "villes_communes", "maladie", "incidence_population_pct"]].dropna()
-        if data.empty:
-            st.warning("Auto-entraînement ignoré : données insuffisantes (trop de valeurs manquantes).")
-            return
-        X = data[["annee", "regions_districts", "villes_communes", "maladie"]]
-        y = data["incidence_population_pct"]
-        pipe = construire_pipeline_defaut()
-        pipe.fit(X, y)
-        st.session_state["pipeline_modele"] = pipe
-        st.session_state["modele_info"] = "Modèle par défaut (RandomForest) entraîné au démarrage."
-    except Exception as e:
-        st.warning("Auto-entraînement au démarrage non réalisé (erreur capturée). Consulte l’onglet 〽️ Modélisation.")
-        st.caption(f"Détail : {type(e).__name__}: {e}")
-
-if AUTO_TRAIN_ON_START and "pipeline_modele" not in st.session_state:
-    entrainer_au_demarrage_si_absent(st.session_state["donnees_nettoyees"])
 
 # --------- Barre de navigation horizontale (onglets) ---------
 onglets = st.tabs([
@@ -198,8 +199,15 @@ onglets = st.tabs([
 with onglets[0]:
     st.title("Incidence des maladies en Côte d’Ivoire (2012–2015)")
     col1, col2 = st.columns([1, 2], gap="large")
+
     with col1:
-        st.image("moustique_tigre.jpg", use_column_width=True, caption="Aedes albopictus (moustique tigre)")
+        # Chargeons l'image uniquement si elle existe pour éviter tout crash (logs précédents)
+        img_path = image_page_icon()
+        if isinstance(img_path, str) and img_path != "🦟" and Path(img_path).exists():
+            st.image(img_path, use_column_width=True, caption="Aedes albopictus (moustique tigre)")
+        else:
+            st.markdown("### 🦟")  # Fallback visuel minimal
+
     with col2:
         st.markdown("""<div class="block" style="text-align:justify">
         <h3>Objectif de l’application</h3>
@@ -208,11 +216,13 @@ with onglets[0]:
         Elle propose des graphiques interactifs, un explorateur visuel libre (Pygwalker),
         ainsi que plusieurs modèles prédictifs (Régression, Random Forest, KNN, ANN).
         </div>""", unsafe_allow_html=True)
+
         st.markdown("""<div class="block" style="text-align:justify">
         <h3>Problème adressé</h3>
         Comment transformer des données brutes de santé publique en <b>indicateurs actionnables</b> 
         et en <b>prédictions</b> fiables pour aider à la décision (priorisation des zones et des pathologies) ?
         </div>""", unsafe_allow_html=True)
+
         st.markdown("""<div class="block" style="text-align:justify">
         <h3>Résultats attendus</h3>
         Un <b>outil unique</b> permettant : 
@@ -239,23 +249,32 @@ with onglets[1]:
     })
 
 # =========================
-# 🛠 EXPLORATION  (tables empilées verticalement)
+# 🛠 EXPLORATION
 # =========================
 with onglets[2]:
     st.header("Exploration des données")
 
-    st.subheader("Dimensions")
+    # Mettons les tables les unes sous les autres, sans colonnes, comme demandé
+    st.subheader("Dimensions & dtypes")
     st.write(f"**Nombre de lignes** : {donnees_nettoyees.shape[0]}")
     st.write(f"**Nombre de colonnes** : {donnees_nettoyees.shape[1]}")
+    st.write("**Types de données**")
+    st.dataframe(
+        rendre_arrow_compatible(donnees_nettoyees.dtypes.to_frame("dtype")),
+        use_container_width=True
+    )
 
-    st.subheader("Types de données (dtypes)")
-    st.dataframe(rendre_arrow_compatible(donnees_nettoyees.dtypes.to_frame("dtype")), use_container_width=True)
+    st.subheader("Valeurs manquantes par colonne")
+    st.dataframe(
+        rendre_arrow_compatible(valeurs_manquantes(donnees_nettoyees)),
+        use_container_width=True
+    )
 
-    st.subheader("Valeurs manquantes (par colonne)")
-    st.dataframe(rendre_arrow_compatible(valeurs_manquantes(donnees_nettoyees)), use_container_width=True)
-
-    st.subheader("Statistiques descriptives (variables numériques)")
-    st.dataframe(rendre_arrow_compatible(statistiques_rapides(donnees_nettoyees)), use_container_width=True)
+    st.subheader("Statistiques descriptives (numérique)")
+    st.dataframe(
+        rendre_arrow_compatible(statistiques_rapides(donnees_nettoyees)),
+        use_container_width=True
+    )
 
     st.subheader("Valeurs aberrantes potentielles (z-score > 3)")
     outliers = detecter_valeurs_aberrantes(donnees_nettoyees)
@@ -271,6 +290,7 @@ with onglets[3]:
     st.header("Préparation et export des données")
     st.write("**Aperçu après nettoyage (doublons supprimés, NA imputés)**")
     st.dataframe(rendre_arrow_compatible(donnees_nettoyees.head(20)), use_container_width=True)
+
     st.download_button(
         label="📥 Télécharger les données nettoyées (CSV)",
         data=telecharger_csv(donnees_nettoyees),
@@ -290,13 +310,12 @@ with onglets[4]:
         maladies_dispo = sorted(dfv["maladie"].dropna().unique().tolist())
         choix_maladie = st.selectbox("Choisir une maladie", maladies_dispo, index=0)
     with colf2:
-        annees_dispo = sorted(dfv["annee"].dropna().unique().astype(int).tolist())
+        annees_dispo = sorted(dfv["annee"].dropna().astype(int).unique().tolist())
         choix_annees = st.multiselect("Filtrer par année", annees_dispo, default=annees_dispo)
     with colf3:
         regions_dispo = ["(Toutes)"] + sorted(dfv["regions_districts"].dropna().unique().tolist())
         choix_region = st.selectbox("Filtrer par région/district", regions_dispo, index=0)
 
-    # Filtrage
     dff = dfv[dfv["maladie"] == choix_maladie]
     dff = dff[dff["annee"].isin(choix_annees)]
     if choix_region != "(Toutes)":
@@ -308,8 +327,8 @@ with onglets[4]:
     else:
         evol = dff.groupby("annee", dropna=True)["incidence_population_pct"].mean().reset_index()
         fig1 = px.line(
-            evol, x="annee", y="incidence_population_pct", markers=True,
-            labels={"annee": "Année", "incidence_population_pct": "Incidence (%)"},
+            evol, x="annee", y="incidence_population_pct",
+            markers=True, labels={"annee": "Année", "incidence_population_pct": "Incidence (%)"},
             title=f"Évolution — {choix_maladie}"
         )
         st.plotly_chart(fig1, use_container_width=True)
@@ -329,7 +348,8 @@ with onglets[4]:
 
     st.subheader("Répartition par année (moyenne)")
     rep = dff.groupby("annee", dropna=True)["incidence_population_pct"].mean().reset_index()
-    fig3 = px.pie(rep, names="annee", values="incidence_population_pct", title="Part relative moyenne par année", hole=0.35)
+    fig3 = px.pie(rep, names="annee", values="incidence_population_pct",
+                  title="Part relative moyenne par année", hole=0.35)
     st.plotly_chart(fig3, use_container_width=True)
 
 # =========================
@@ -339,30 +359,29 @@ with onglets[5]:
     st.header("Explorateur visuel libre (Pygwalker)")
     st.info("Astuce : glissez-déposez les champs à gauche pour créer vos vues interactives.")
 
-    # Test rapide : s'assurer que les composants HTML sont OK
-    components.html("<div style='padding:8px;border:1px solid #eee;border-radius:8px'>✅ Test composant HTML OK</div>", height=60)
+    try:
+        # Chargeons l'API Streamlit officielle de Pygwalker (recommandée par la doc)
+        from pygwalker.api.streamlit import StreamlitRenderer
 
-    if donnees_nettoyees is None or donnees_nettoyees.empty:
-        st.warning("Aucune donnée disponible à explorer.")
-    else:
-        try:
-            # Méthode recommandée (API Streamlit de Pygwalker)
-            from pygwalker.api.streamlit import init_streamlit_comm, get_streamlit_html
-            init_streamlit_comm()
-            pyg_html = get_streamlit_html(donnees_nettoyees, use_kernel_calc=True, spec=None)
-            components.html(pyg_html, height=950, scrolling=True)
-            st.success("Pygwalker (API Streamlit) chargé.")
-        except Exception as e_api:
-            # Fallback générique (ne bloque pas la page si échec)
-            try:
-                import pygwalker as pyg
-                st.info("Chargement fallback Pygwalker (méthode générique).")
-                pyg_html = pyg.to_html(donnees_nettoyees)
-                components.html(pyg_html, height=950, scrolling=True)
-                st.success("Pygwalker (fallback) chargé.")
-            except Exception as e_fallback:
-                st.error("Pygwalker n’a pas pu être rendu, mais le reste de l’application reste disponible.")
-                st.caption(f"Détails : {type(e_api).__name__ if e_api else ''} {e_api or e_fallback}")
+        @st.cache_resource(show_spinner=False)
+        def obtenir_pyg_renderer(df: pd.DataFrame):
+            """Construisons un renderer Pygwalker mis en cache pour de meilleures perfs."""
+            # Passons le DataFrame déjà nettoyé ; spec_io_mode="rw" pour permettre sauvegarde de config
+            return StreamlitRenderer(df, spec_io_mode="rw")
+
+        renderer = obtenir_pyg_renderer(donnees_nettoyees)
+        renderer.explorer(height=900, scrolling=True, default_tab="vis")  # Affichons le studio
+
+    except Exception as e:
+        st.error("Pygwalker n’a pas pu être chargé (vérifiez les versions).")
+        st.exception(e)
+        # Fallback minimal : export HTML si dispo plus tard
+        # try:
+        #     import pygwalker as pyg
+        #     html = pyg.to_html(donnees_nettoyees)
+        #     html_component(html, height=900, scrolling=True)
+        # except Exception:
+        #     pass
 
 # =========================
 # 〽️ MODÉLISATION
@@ -370,28 +389,21 @@ with onglets[5]:
 with onglets[6]:
     st.header("Modélisation supervisée (régression)")
 
-    # Paramètres utilisateur
     colp1, colp2, colp3 = st.columns(3)
     with colp1:
         type_modele = st.selectbox(
             "Choisir un modèle",
-            ["Régression linéaire", "Régression polynomiale", "Forêt aléatoire", "KNN régression", "Réseau de neurones (ANN)"]
+            ["Régression linéaire", "Régression polynomiale", "Forêt aléatoire",
+             "KNN régression", "Réseau de neurones (ANN)"]
         )
     with colp2:
-        test_size = st.slider("Taille test (%)", 10, 40, 20, step=5)
+        taille_test = st.slider("Taille test (%)", 10, 40, 20, step=5)
     with colp3:
-        random_state = st.number_input("Graine aléatoire", value=42, step=1)
+        graine = st.number_input("Graine aléatoire", value=42, step=1)
 
-    # Données modèle sans trous (éviter crash scikit-learn)
-    df_model = donnees_nettoyees[[
-        "annee", "regions_districts", "villes_communes", "maladie", "incidence_population_pct"
-    ]].dropna()
-    if df_model.empty:
-        st.error("Impossible d'entraîner : aucune ligne complète (X et y) après suppression des valeurs manquantes.")
-        st.stop()
-
-    X = df_model[["annee", "regions_districts", "villes_communes", "maladie"]]
-    y = df_model["incidence_population_pct"]
+    # Préparons les features/cible
+    X = donnees_nettoyees[["annee", "regions_districts", "villes_communes", "maladie"]]
+    y = donnees_nettoyees["incidence_population_pct"]
 
     colonnes_numeriques = ["annee"]
     colonnes_categorielles = ["regions_districts", "villes_communes", "maladie"]
@@ -403,15 +415,13 @@ with onglets[6]:
         ]
     )
 
-    # Split
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size/100, random_state=int(random_state)
+        X, y, test_size=taille_test/100, random_state=int(graine)
     )
 
-    # Pipeline modèle
+    # Sélection du pipeline en fonction du modèle choisi
     if type_modele == "Régression linéaire":
-        modele = LinearRegression()
-        pipeline = Pipeline([("prep", preprocesseur), ("mod", modele)])
+        pipeline = Pipeline([("prep", preprocesseur), ("mod", LinearRegression())])
 
     elif type_modele == "Régression polynomiale":
         pipeline = Pipeline([
@@ -421,37 +431,44 @@ with onglets[6]:
         ])
 
     elif type_modele == "Forêt aléatoire":
-        modele = RandomForestRegressor(n_estimators=300, random_state=int(random_state))
-        pipeline = Pipeline([("prep", preprocesseur), ("mod", modele)])
+        pipeline = Pipeline([
+            ("prep", preprocesseur),
+            ("mod", RandomForestRegressor(n_estimators=300, random_state=int(graine)))
+        ])
 
     elif type_modele == "KNN régression":
-        modele = KNeighborsRegressor(n_neighbors=7)
-        pipeline = Pipeline([("prep", preprocesseur), ("mod", modele)])
+        pipeline = Pipeline([
+            ("prep", preprocesseur),
+            ("mod", KNeighborsRegressor(n_neighbors=7))
+        ])
 
-    else:  # Réseau de neurones (ANN)
-        modele = MLPRegressor(hidden_layer_sizes=(128, 64), activation="relu", solver="adam",
-                              max_iter=1000, random_state=int(random_state))
-        pipeline = Pipeline([("prep", preprocesseur), ("mod", modele)])
+    else:
+        pipeline = Pipeline([
+            ("prep", preprocesseur),
+            ("mod", MLPRegressor(hidden_layer_sizes=(128, 64),
+                                 activation="relu", solver="adam",
+                                 max_iter=1000, random_state=int(graine)))
+        ])
 
-    # Entraînement + Évaluation
+    # Entraînons le modèle
     pipeline.fit(X_train, y_train)
-    y_pred = pipeline.predict(X_test)
 
+    # Évaluons sur le test
+    y_pred = pipeline.predict(X_test)
     r2 = r2_score(y_test, y_pred)
     mae = mean_absolute_error(y_test, y_pred)
-    rmse = root_mean_squared_error(y_test, y_pred)  # ✅ plus d’avertissement squared=False
+    rmse = mean_squared_error(y_test, y_pred, squared=False)  # conforme sklearn>=1.4
 
-    colm1, colm2, colm3 = st.columns(3)
-    colm1.metric("R²", f"{r2:0.3f}")
-    colm2.metric("MAE", f"{mae:0.3f}")
-    colm3.metric("RMSE", f"{rmse:0.3f}")
+    cm1, cm2, cm3 = st.columns(3)
+    cm1.metric("R²", f"{r2:0.3f}")
+    cm2.metric("MAE", f"{mae:0.3f}")
+    cm3.metric("RMSE", f"{rmse:0.3f}")
 
     with st.expander("Voir la validation croisée (5 plis)"):
         scores = cross_val_score(pipeline, X, y, cv=5, scoring="r2")
         st.write("Scores R² par pli :", [f"{s:0.3f}" for s in scores])
         st.write("R² moyen :", f"{np.mean(scores):0.3f} ± {np.std(scores):0.3f}")
 
-    # Pipeline disponible pour l’onglet Prédiction
     st.session_state["pipeline_modele"] = pipeline
     st.success("Modèle entraîné et stocké pour l’onglet ◻ Prédiction.")
 
@@ -465,9 +482,6 @@ with onglets[7]:
         st.warning("Veuillez d’abord entraîner un modèle dans l’onglet 〽️ Modélisation.")
     else:
         pipe = st.session_state["pipeline_modele"]
-
-        if "modele_info" in st.session_state:
-            st.info(st.session_state["modele_info"])
 
         colpr1, colpr2, colpr3, colpr4 = st.columns(4)
         with colpr1:
