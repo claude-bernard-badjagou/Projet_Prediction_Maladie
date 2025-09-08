@@ -18,6 +18,7 @@ from sklearn.ensemble import RandomForestRegressor           # Importons Forêt 
 from sklearn.neighbors import KNeighborsRegressor            # Importons KNN régression
 from sklearn.neural_network import MLPRegressor             # Importons Perceptron multi-couches (ANN léger, sans TF)
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error  # Importons les métriques de régression
+import streamlit.components.v1 as components
 
 # -------- Configuration globale de la page --------
 st.set_page_config(                             # Configurons la page Streamlit pour un rendu propre
@@ -313,12 +314,21 @@ with onglets[4]:
 # 👀 EXPLORATEUR (Pygwalker)
 # =========================
 with onglets[5]:
-    st.header("Explorateur visuel libre (Pygwalker)")                          # Titre de section
-    st.info("Astuce : glissez-déposez les champs à gauche pour créer vos vues interactives.")  # Conseils d'usage
+    st.header("Explorateur visuel libre (Pygwalker)")
+    st.info("Astuce : glissez-déposez les champs à gauche pour créer vos vues interactives.")
+
     try:
-        import pygwalker as pyg                                                # Importons Pygwalker seulement ici
-        html = pyg.to_html(donnees_nettoyees)                                  # Convertissons le DataFrame en studio web
-        st.components.v1.html(html, height=900, scrolling=True)               # Intégrons le studio dans Streamlit
+        # Chargeons Pygwalker pour générer un studio d’exploration visuelle embarqué
+        import pygwalker as pyg
+
+        # Convertissons le DataFrame en interface HTML interactive de Pygwalker
+        html = pyg.to_html(donnees_nettoyees)
+
+        # ✅ Appel correct de l’API Streamlit Components
+        components.html(html, height=900, scrolling=True)
+
+    except ModuleNotFoundError:
+        st.error("Pygwalker n’est pas installé. Vérifiez qu’il est bien dans requirements.txt (pygwalker==0.4.8.9).")
     except Exception as e:
         st.error("Pygwalker n’a pas pu être chargé. Vérifiez l’environnement de déploiement.")
         st.exception(e)
